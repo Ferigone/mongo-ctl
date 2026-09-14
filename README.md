@@ -137,6 +137,14 @@ wails build    # produces build/bin/MongoCtl.exe
 go test ./...  # unit tests
 ```
 
+### Releases
+
+Every push to `master` runs the tests, builds the binary and publishes it, together
+with a SHA-256 checksum, through [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+The release is named after `info.productVersion` in `wails.json`. Pushing again without
+changing it refreshes the assets on the existing release; bumping it starts a new one.
+
 ### Layout
 
 ```

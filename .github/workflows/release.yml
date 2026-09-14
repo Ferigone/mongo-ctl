@@ -1,0 +1,82 @@
+name: Release
+
+# Every push to master publishes a downloadable build. The release is named after
+# info.productVersion in wails.json: pushing again without bumping it refreshes the
+# asset on the existing release, while bumping it starts a new one.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Releases are published by tag, so overlapping runs would race each other.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Release notes are generated from the commits since the previous tag.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: wails build -platform windows/amd64
+
+      - name: Read version
+        id: meta
+        shell: pwsh
+        run: |
+          $version = (Get-Content wails.json -Raw | ConvertFrom-Json).info.productVersion
+          if (-not $version) { throw 'info.productVersion is missing from wails.json' }
+          "tag=v$version" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash build/bin/MongoCtl.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  MongoCtl.exe" | Out-File build/bin/MongoCtl.exe.sha256 -Encoding ascii
+          Write-Host "SHA256 $hash"
+
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.meta.outputs.tag }}'
+          $assets = @('build/bin/MongoCtl.exe', 'build/bin/MongoCtl.exe.sha256')
+
+          gh release view $tag 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag exists - replacing its assets"
+            gh release upload $tag $assets --clobber
+          } else {
+            Write-Host "Creating release $tag"
+            gh release create $tag $assets --title "MongoCtl $tag" --generate-notes
+          }
