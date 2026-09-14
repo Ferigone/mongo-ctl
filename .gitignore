@@ -1,3 +1,8 @@
 build/bin
 node_modules
-frontend/dist
+
+# main.go embeds frontend/dist, so the directory has to exist even before the
+# frontend is built — on a fresh clone, in CI, and in editors. The placeholder is
+# tracked; the build output inside it is not.
+frontend/dist/*
+!frontend/dist/.gitkeep
